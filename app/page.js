@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { PRESET_CATEGORIES, RESOLUTION_PRESETS } from '@/lib/config';
 
 // ─── SVG Icons ──────────────────────────────────────────
@@ -13,6 +13,12 @@ const GithubIcon = () => (
 const DownloadIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
 );
+const ResetIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+);
+const CategoryIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+);
 
 const EXAMPLE_QUERIES = [
   { label: 'Indian street food', query: 'people cooking street food in Indian night markets' },
@@ -23,7 +29,7 @@ const EXAMPLE_QUERIES = [
   { label: 'Castle ruins', query: 'medieval European castle ruins at sunset' },
 ];
 
-/** Export selected images to Excel (matches harvester xlsx format) */
+/** Export selected images to Excel */
 async function exportToExcel(items) {
   const XLSX = await import('xlsx');
   const rows = items.map((it) => ({
@@ -38,14 +44,11 @@ async function exportToExcel(items) {
     wikidata_item: it.wikidataLabel || it.matchedQid || '',
     category: it.matchedCategory || '',
   }));
-
   const ws = XLSX.utils.json_to_sheet(rows);
-  // Auto-width columns
   const colWidths = Object.keys(rows[0] || {}).map((key) => ({
     wch: Math.max(key.length + 2, ...rows.map((r) => String(r[key] || '').slice(0, 60).length + 2)),
   }));
   ws['!cols'] = colWidths;
-
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Images');
   XLSX.writeFile(wb, `commons_search_results_${Date.now()}.xlsx`);
@@ -57,8 +60,6 @@ export default function HomePage() {
   const [activeTab, setActiveTab] = useState('combined');
   const [loading, setLoading] = useState(false);
   const [modalItem, setModalItem] = useState(null);
-
-  // Selection
   const [selected, setSelected] = useState(new Set());
 
   // Filters
@@ -68,10 +69,71 @@ export default function HomePage() {
   const [customWidth, setCustomWidth] = useState('');
   const [customHeight, setCustomHeight] = useState('');
 
+  // Autocomplete
+  const [suggestions, setSuggestions] = useState({ suggestions: [], categories: [] });
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const suggestRef = useRef(null);
+  const debounceRef = useRef(null);
+
+  // Category search
+  const [catSearchQuery, setCatSearchQuery] = useState('');
+  const [catSearchResults, setCatSearchResults] = useState([]);
+  const [showCatDropdown, setShowCatDropdown] = useState(false);
+  const catDebounceRef = useRef(null);
+  const catDropdownRef = useRef(null);
+
   const activeList = useMemo(() => {
     if (!results) return [];
     return results[activeTab] || results.combined || [];
   }, [results, activeTab]);
+
+  // ─── Autocomplete on typing ───
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (!query || query.length < 2) {
+      setSuggestions({ suggestions: [], categories: [] });
+      setShowSuggestions(false);
+      return;
+    }
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const resp = await fetch(`/api/suggest?q=${encodeURIComponent(query)}`);
+        const data = await resp.json();
+        setSuggestions(data);
+        setShowSuggestions(true);
+      } catch (_) { /* ignore */ }
+    }, 300);
+    return () => clearTimeout(debounceRef.current);
+  }, [query]);
+
+  // ─── Category search debounce ───
+  useEffect(() => {
+    if (catDebounceRef.current) clearTimeout(catDebounceRef.current);
+    if (!catSearchQuery || catSearchQuery.length < 2) {
+      setCatSearchResults([]);
+      setShowCatDropdown(false);
+      return;
+    }
+    catDebounceRef.current = setTimeout(async () => {
+      try {
+        const resp = await fetch(`/api/categories?q=${encodeURIComponent(catSearchQuery)}`);
+        const data = await resp.json();
+        setCatSearchResults(data.categories || []);
+        setShowCatDropdown(true);
+      } catch (_) { /* ignore */ }
+    }, 300);
+    return () => clearTimeout(catDebounceRef.current);
+  }, [catSearchQuery]);
+
+  // ─── Click outside to close dropdowns ───
+  useEffect(() => {
+    const handler = (e) => {
+      if (suggestRef.current && !suggestRef.current.contains(e.target)) setShowSuggestions(false);
+      if (catDropdownRef.current && !catDropdownRef.current.contains(e.target)) setShowCatDropdown(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
 
   const toggleSelect = useCallback((id) => {
     setSelected((prev) => {
@@ -82,11 +144,8 @@ export default function HomePage() {
   }, []);
 
   const selectAll = useCallback(() => {
-    if (selected.size === activeList.length) {
-      setSelected(new Set());
-    } else {
-      setSelected(new Set(activeList.map((_, i) => i)));
-    }
+    if (selected.size === activeList.length) setSelected(new Set());
+    else setSelected(new Set(activeList.map((_, i) => i)));
   }, [activeList, selected]);
 
   const handleExport = useCallback(() => {
@@ -95,14 +154,25 @@ export default function HomePage() {
     exportToExcel(items);
   }, [activeList, selected]);
 
+  const resetFilters = useCallback(() => {
+    setSelectedCategory('');
+    setCustomCategory('');
+    setResPreset(0);
+    setCustomWidth('');
+    setCustomHeight('');
+    setCatSearchQuery('');
+    setCatSearchResults([]);
+  }, []);
+
   const doSearch = useCallback(async (q, cat) => {
     const searchQuery = q || query;
     const searchCat = cat ?? (customCategory || selectedCategory);
-
     if (!searchQuery.trim() && !searchCat) return;
+
     setLoading(true);
     setResults(null);
     setSelected(new Set());
+    setShowSuggestions(false);
 
     const preset = RESOLUTION_PRESETS[resPreset];
     const body = {
@@ -121,9 +191,7 @@ export default function HomePage() {
         body: JSON.stringify(body),
       });
       const data = await resp.json();
-      if (data.error) {
-        console.error('API Error:', data.error);
-      }
+      if (data.error) console.error('API Error:', data.error);
       setResults(data);
       setActiveTab('combined');
     } catch (err) {
@@ -132,6 +200,8 @@ export default function HomePage() {
       setLoading(false);
     }
   }, [query, selectedCategory, customCategory, resPreset, customWidth, customHeight]);
+
+  const filtersActive = selectedCategory || customCategory || resPreset > 0 || customWidth || customHeight;
 
   return (
     <>
@@ -160,20 +230,47 @@ export default function HomePage() {
           Powered by AI vision embeddings and the Wikidata Vector Database.
         </p>
 
-        <div className="search-area">
+        <div className="search-area" ref={suggestRef}>
           <form onSubmit={(e) => { e.preventDefault(); doSearch(); }} className="search-box">
             <SearchIcon />
             <input
               className="search-input"
               type="text"
-              placeholder="Describe what you're looking for..."
+              placeholder="Describe what you're looking for — even detailed prompts work..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
+              onFocus={() => { if (suggestions.suggestions.length || suggestions.categories.length) setShowSuggestions(true); }}
             />
             <button className="search-btn" type="submit" disabled={loading}>
               {loading ? 'Searching...' : 'Search'}
             </button>
           </form>
+
+          {/* Autocomplete Dropdown */}
+          {showSuggestions && (suggestions.suggestions.length > 0 || suggestions.categories.length > 0) && (
+            <div className="autocomplete-dropdown">
+              {suggestions.suggestions.length > 0 && (
+                <div className="ac-section">
+                  <div className="ac-section-title"><SearchIcon /> Suggestions</div>
+                  {suggestions.suggestions.map((s, i) => (
+                    <button key={i} className="ac-item" onClick={() => { setQuery(s); setShowSuggestions(false); doSearch(s); }}>
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {suggestions.categories.length > 0 && (
+                <div className="ac-section">
+                  <div className="ac-section-title"><CategoryIcon /> Categories</div>
+                  {suggestions.categories.map((c, i) => (
+                    <button key={i} className="ac-item ac-item-cat" onClick={() => { setCustomCategory(c.title); setShowSuggestions(false); doSearch(query, c.title); }}>
+                      {c.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="chips">
             {EXAMPLE_QUERIES.map((ex) => (
@@ -189,7 +286,7 @@ export default function HomePage() {
       <section className="filters-section">
         <div className="filters-inner">
           <div className="filter-group">
-            <label>Category</label>
+            <label>Campaign / Category</label>
             <select className="filter-select" value={selectedCategory} onChange={(e) => setSelectedCategory(e.target.value)}>
               <option value="">— None —</option>
               {PRESET_CATEGORIES.map((g) => (
@@ -200,6 +297,33 @@ export default function HomePage() {
                 </optgroup>
               ))}
             </select>
+          </div>
+
+          {/* Category Search */}
+          <div className="filter-group" ref={catDropdownRef} style={{ position: 'relative' }}>
+            <label>Search Categories</label>
+            <input
+              className="filter-input"
+              style={{ width: 200 }}
+              placeholder="Search any category..."
+              value={catSearchQuery}
+              onChange={(e) => setCatSearchQuery(e.target.value)}
+              onFocus={() => { if (catSearchResults.length) setShowCatDropdown(true); }}
+            />
+            {showCatDropdown && catSearchResults.length > 0 && (
+              <div className="cat-search-dropdown">
+                {catSearchResults.map((c, i) => (
+                  <button key={i} className="ac-item" onClick={() => {
+                    setCustomCategory(c.title);
+                    setCatSearchQuery(c.label);
+                    setShowCatDropdown(false);
+                  }}>
+                    <CategoryIcon /> {c.label}
+                    {c.snippet && <span className="cat-snippet">{c.snippet}</span>}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="filter-group">
@@ -231,7 +355,27 @@ export default function HomePage() {
             <label>Min Height</label>
             <input className="filter-input" type="number" placeholder="px" value={customHeight} onChange={(e) => setCustomHeight(e.target.value)} />
           </div>
+
+          {filtersActive && (
+            <div className="filter-group" style={{ justifyContent: 'flex-end' }}>
+              <button className="reset-btn" onClick={resetFilters}>
+                <ResetIcon /> Reset Filters
+              </button>
+            </div>
+          )}
         </div>
+
+        {/* Category suggestions after search */}
+        {results?.categorySuggestions?.length > 0 && (
+          <div className="category-suggestions">
+            <span className="cs-label">Recommended categories:</span>
+            {results.categorySuggestions.map((cat, i) => (
+              <button key={i} className="cs-chip" onClick={() => { setCustomCategory(cat); doSearch(query, cat); }}>
+                <CategoryIcon /> {cat.replace(/_/g, ' ')}
+              </button>
+            ))}
+          </div>
+        )}
       </section>
 
       {/* Results */}
@@ -240,6 +384,7 @@ export default function HomePage() {
           <div className="loading-area">
             <div className="spinner" />
             <p>Searching Wikimedia Commons with AI embeddings...</p>
+            {results?.meta?.isComplex && <p className="loading-sub">Decomposing complex query into sub-searches...</p>}
           </div>
         )}
 
@@ -250,8 +395,21 @@ export default function HomePage() {
               <div className="results-meta">
                 <span>{activeList.length} images</span>
                 {results.meta?.elapsed && <span>{results.meta.elapsed}s</span>}
+                {results.meta?.isComplex && <span className="badge badge-info">Multi-query</span>}
               </div>
             </div>
+
+            {/* Related Prompts */}
+            {results.relatedPrompts?.length > 0 && (
+              <div className="related-prompts">
+                <span className="rp-label">Related searches:</span>
+                {results.relatedPrompts.map((p, i) => (
+                  <button key={i} className="rp-chip" onClick={() => { setQuery(p); doSearch(p); }}>
+                    {p}
+                  </button>
+                ))}
+              </div>
+            )}
 
             {/* Tabs + Actions bar */}
             <div className="results-toolbar">
@@ -275,11 +433,7 @@ export default function HomePage() {
               {activeList.length > 0 && (
                 <div className="selection-bar">
                   <label className="select-all-label">
-                    <input
-                      type="checkbox"
-                      checked={selected.size > 0 && selected.size === activeList.length}
-                      onChange={selectAll}
-                    />
+                    <input type="checkbox" checked={selected.size > 0 && selected.size === activeList.length} onChange={selectAll} />
                     <span>{selected.size > 0 ? `${selected.size} selected` : 'Select all'}</span>
                   </label>
                   {selected.size > 0 && (
@@ -301,13 +455,8 @@ export default function HomePage() {
               <div className="results-grid">
                 {activeList.map((item, i) => (
                   <div key={`${item.pageId}-${i}`} className={`image-card ${selected.has(i) ? 'card-selected' : ''}`}>
-                    {/* Selection checkbox */}
                     <label className="card-checkbox" onClick={(e) => e.stopPropagation()}>
-                      <input
-                        type="checkbox"
-                        checked={selected.has(i)}
-                        onChange={() => toggleSelect(i)}
-                      />
+                      <input type="checkbox" checked={selected.has(i)} onChange={() => toggleSelect(i)} />
                     </label>
                     <div className="card-clickable" onClick={() => setModalItem(item)}>
                       <img
@@ -315,6 +464,7 @@ export default function HomePage() {
                         src={item.thumbUrl}
                         alt={item.title}
                         loading="lazy"
+                        decoding="async"
                         onError={(e) => { e.target.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300"><rect fill="%23f0f0f2" width="400" height="300"/><text x="50%" y="50%" fill="%238c8fa3" font-family="sans-serif" font-size="13" text-anchor="middle" dominant-baseline="middle">Image unavailable</text></svg>'; }}
                       />
                       <div className="card-body">
