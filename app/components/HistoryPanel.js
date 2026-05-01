@@ -1,54 +1,69 @@
 'use client';
 import { useState, useEffect } from 'react';
 
-/** Get history from localStorage */
+/* ── localStorage helpers (for non-logged-in users) ── */
 function getLocalHistory() {
-  try {
-    return JSON.parse(localStorage.getItem('wks_history') || '[]');
-  } catch { return []; }
+  try { return JSON.parse(localStorage.getItem('wks_history') || '[]'); } catch { return []; }
 }
-
-/** Save history to localStorage */
 function saveLocalHistory(history) {
   localStorage.setItem('wks_history', JSON.stringify(history.slice(0, 100)));
 }
 
-/** Add a search to history */
-export function addToHistory(query, category, resultCount, elapsed) {
+/** Add to local history (called from page.js for non-logged-in users) */
+export function addToLocalHistory(query, category, resultCount, elapsed) {
   if (!query) return;
   const history = getLocalHistory();
-  history.unshift({
-    id: Date.now(),
-    query,
-    category: category || '',
-    result_count: resultCount,
-    elapsed: elapsed || '',
-    created_at: new Date().toISOString(),
-  });
+  history.unshift({ id: Date.now(), query, category: category || '', result_count: resultCount, elapsed: elapsed || '', created_at: new Date().toISOString() });
   saveLocalHistory(history);
 }
 
-export default function HistoryPanel({ onClose, onSearch }) {
+export default function HistoryPanel({ token, onClose, onSearch }) {
   const [history, setHistory] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  useEffect(() => { setHistory(getLocalHistory()); }, []);
+  useEffect(() => {
+    if (token) {
+      // Logged in → fetch from Turso via API
+      fetch('/api/history', { headers: { Authorization: `Bearer ${token}` } })
+        .then(r => r.json())
+        .then(d => setHistory(d.history || []))
+        .catch(() => setHistory(getLocalHistory()))
+        .finally(() => setLoading(false));
+    } else {
+      // Not logged in → use localStorage
+      setHistory(getLocalHistory());
+      setLoading(false);
+    }
+  }, [token]);
 
-  const deleteItem = (id, e) => {
+  const deleteItem = async (id, e) => {
     e.stopPropagation();
-    const updated = history.filter((h) => h.id !== id);
-    setHistory(updated);
-    saveLocalHistory(updated);
+    if (token) {
+      try {
+        await fetch('/api/history', {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id }),
+        });
+      } catch (_) {}
+    } else {
+      // localStorage delete
+      const updated = history.filter(h => h.id !== id);
+      saveLocalHistory(updated);
+    }
+    setHistory(prev => prev.filter(h => h.id !== id));
   };
 
   return (
     <div className="history-overlay" onClick={onClose}>
       <div className="history-panel" onClick={(e) => e.stopPropagation()}>
         <div className="history-header">
-          <h3>📋 Search History</h3>
+          <h3>📋 Search History {token ? '(synced)' : '(this device)'}</h3>
           <button className="modal-close" onClick={onClose}>×</button>
         </div>
         <div className="history-body">
-          {history.length === 0 && <p className="history-empty">No searches yet. Start searching to build your history.</p>}
+          {loading && <p className="history-empty">Loading...</p>}
+          {!loading && history.length === 0 && <p className="history-empty">No searches yet. Start searching to build your history.</p>}
           {history.map((h) => (
             <div key={h.id} className="history-item-wrap">
               <button className="history-item" onClick={() => { onSearch(h.query); onClose(); }}>
@@ -56,7 +71,7 @@ export default function HistoryPanel({ onClose, onSearch }) {
                 <div className="hi-meta">
                   {h.category && <span className="hi-cat">{h.category}</span>}
                   <span>{h.result_count} results</span>
-                  <span>{h.elapsed}s</span>
+                  {h.elapsed && <span>{h.elapsed}s</span>}
                   <span>{new Date(h.created_at).toLocaleDateString()}</span>
                 </div>
               </button>
