@@ -1,4 +1,5 @@
 import './globals.css';
+import Providers from './components/Providers';
 
 export const metadata = {
   title: 'WikiSemanticImgSearch — Semantic Image Search for Wikimedia Commons',
@@ -11,7 +12,7 @@ export const metadata = {
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body><Providers>{children}</Providers></body>
     </html>
   );
 }

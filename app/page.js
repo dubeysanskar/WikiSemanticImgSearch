@@ -1,5 +1,6 @@
 'use client';
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { useSession, signOut } from 'next-auth/react';
 import { PRESET_CATEGORIES, RESOLUTION_PRESETS } from '@/lib/config';
 import AuthModal from './components/AuthModal';
 import HistoryPanel from './components/HistoryPanel';
@@ -64,37 +65,19 @@ export default function HomePage() {
   const [showCatDD, setShowCatDD] = useState(false);
   const catDebRef = useRef(null);
   const catRef = useRef(null);
-  // Auth
-  const [user, setUser] = useState(null);
-  const [token, setToken] = useState(null);
+  // Auth — NextAuth session
+  const { data: session, status: sessionStatus } = useSession();
+  const user = session?.user || null;
   const [showAuth, setShowAuth] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  // Legacy token for Turso history (use session-based)
+  const [token, setToken] = useState(null);
   // Pagination
   const [visibleCount, setVisibleCount] = useState(40);
   // Special search
   const [specialMode, setSpecialMode] = useState(false);
   const [specialFile, setSpecialFile] = useState(null);
   const [specialLoading, setSpecialLoading] = useState(false);
-
-  // Load auth from localStorage
-  useEffect(() => {
-    const t = localStorage.getItem('wks_token');
-    const u = localStorage.getItem('wks_user');
-    if (t && u) { setToken(t); setUser(JSON.parse(u)); }
-  }, []);
-
-  const handleLogin = (t, u) => {
-    setToken(t); setUser(u);
-    localStorage.setItem('wks_token', t);
-    localStorage.setItem('wks_user', JSON.stringify(u));
-    setShowAuth(false);
-  };
-
-  const handleLogout = () => {
-    setToken(null); setUser(null);
-    localStorage.removeItem('wks_token');
-    localStorage.removeItem('wks_user');
-  };
 
   const activeList = useMemo(() => results?.[activeTab] || results?.combined || [], [results, activeTab]);
 
@@ -153,10 +136,9 @@ export default function HomePage() {
     const mwUser = user?.wikiUsername || '';
     const body = { query: sq.trim(), mode: 'combined', category: sc || '', minWidth: preset?.width||(customWidth?Number(customWidth):null), minHeight: preset?.height||(customHeight?Number(customHeight):null), maxResults: 80, mediaWikiUser: mwUser };
     const headers = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
     try { const r = await fetch('/api/search', { method:'POST', headers, body: JSON.stringify(body) }); const d = await r.json(); setResults(d); setActiveTab('combined'); } catch(e) { console.error(e); }
     finally { setLoading(false); }
-  }, [query, selectedCategory, customCategory, resPreset, customWidth, customHeight, token, user]);
+  }, [query, selectedCategory, customCategory, resPreset, customWidth, customHeight, user]);
 
   const filtersActive = selectedCategory || customCategory || resPreset > 0 || customWidth || customHeight;
 
@@ -167,7 +149,7 @@ export default function HomePage() {
         <button className="nav-btn" onClick={newSearch}>✨ New Search</button>
         <button className="nav-btn" onClick={() => setShowHistory(true)}>📋 History</button>
         {user ? (
-          <><span className="nav-user">Hi, {user.wikiUsername}</span><button className="nav-btn nav-logout" onClick={handleLogout}>Logout</button></>
+          <><span className="nav-user">Hi, {user.wikiUsername || user.name}</span><button className="nav-btn nav-logout" onClick={() => signOut()}>Logout</button></>
         ) : (
           <button className="nav-btn nav-login" onClick={() => setShowAuth(true)}>Login</button>
         )}
@@ -248,7 +230,7 @@ export default function HomePage() {
 
     {modalItem && <div className="modal-overlay" onClick={() => setModalItem(null)}><div className="modal-card" onClick={e => e.stopPropagation()}><div className="modal-grid"><div className="modal-img-wrap"><img src={modalItem.thumbUrl} alt={modalItem.title} /></div><div className="modal-info"><button className="modal-close" onClick={() => setModalItem(null)}>×</button><h3>{modalItem.title}</h3><div className="modal-meta"><div className="meta-row"><span className="meta-label">Author</span><span className="meta-value">{modalItem.author}</span></div><div className="meta-row"><span className="meta-label">License</span><span className="meta-value">{modalItem.license||'Unknown'}</span></div><div className="meta-row"><span className="meta-label">Resolution</span><span className="meta-value">{modalItem.width&&modalItem.height?`${modalItem.width}×${modalItem.height}`:'N/A'}</span></div><div className="meta-row"><span className="meta-label">Found via</span><span className={`badge badge-${modalItem.source}`}>{modalItem.source==='both'?'Keyword + Semantic':modalItem.source}</span></div>{modalItem.wikidataLabel && <div className="meta-row"><span className="meta-label">Wikidata</span><span className="meta-value">{modalItem.wikidataLabel}</span></div>}</div>{modalItem.description && <p className="modal-desc">{modalItem.description}</p>}<div className="modal-actions"><a className="btn btn-primary" href={modalItem.pageUrl} target="_blank" rel="noopener noreferrer">View on Commons</a><a className="btn btn-outline" href={modalItem.fullUrl} target="_blank" rel="noopener noreferrer">Full Resolution</a></div></div></div></div></div>}
 
-    {showAuth && <AuthModal onClose={() => setShowAuth(false)} onLogin={handleLogin} />}
+    {showAuth && <AuthModal onClose={() => setShowAuth(false)} />}
     {showHistory && <HistoryPanel token={token} onClose={() => setShowHistory(false)} onSearch={(q) => {setQuery(q);doSearch(q);}} />}
 
 
