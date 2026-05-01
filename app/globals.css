@@ -484,3 +484,11 @@ button { cursor: pointer; font-family: var(--font); }
 
 /* ─── LOAD MORE ─── */
 .load-more-btn { padding: 12px 40px; font-size: 0.9rem; border-radius: var(--radius-lg); }
+
+/* ─── RESET SEARCH BTN ─── */
+.reset-search-btn {
+  display: flex; align-items: center; gap: 4px;
+  padding: 8px 16px; font-size: 0.8rem; flex-shrink: 0;
+  border-color: #ef4444; color: #ef4444;
+}
+.reset-search-btn:hover { background: #fef2f2; }

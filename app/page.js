@@ -150,7 +150,7 @@ export default function HomePage() {
     if (!sq.trim() && !sc) return;
     setLoading(true); setResults(null); setSelected(new Set()); setShowSugg(false); setVisibleCount(40);
     const preset = RESOLUTION_PRESETS[resPreset];
-    const body = { query: sq.trim(), mode: 'combined', category: sc || '', minWidth: preset?.width||(customWidth?Number(customWidth):null), minHeight: preset?.height||(customHeight?Number(customHeight):null), maxResults: 40 };
+    const body = { query: sq.trim(), mode: 'combined', category: sc || '', minWidth: preset?.width||(customWidth?Number(customWidth):null), minHeight: preset?.height||(customHeight?Number(customHeight):null), maxResults: 200 };
     const headers = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
     try { const r = await fetch('/api/search', { method:'POST', headers, body: JSON.stringify(body) }); const d = await r.json(); setResults(d); setActiveTab('combined'); } catch(e) { console.error(e); }
@@ -217,7 +217,7 @@ export default function HomePage() {
     <section className="results-section container">
       {loading && <div className="loading-area"><div className="spinner" /><p>Searching Wikimedia Commons with AI embeddings...</p></div>}
       {results && !loading && (<>
-        <div className="results-header"><h2>Results{results.meta?.query ? ` for "${results.meta.query}"` : ''}</h2><div className="results-meta"><span>{activeList.length} images</span>{results.meta?.elapsed && <span>{results.meta.elapsed}s</span>}</div></div>
+        <div className="results-header"><h2>Results{results.meta?.query ? ` for "${results.meta.query}"` : ''}</h2><div className="results-meta"><span>{activeList.length} images</span>{results.meta?.elapsed && <span>{results.meta.elapsed}s</span>}<button className="btn btn-outline reset-search-btn" onClick={newSearch}><ResetIcon /> Reset</button></div></div>
         {results.relatedPrompts?.length > 0 && <div className="related-prompts"><span className="rp-label">Related searches:</span>{results.relatedPrompts.map((p,i) => <button key={i} className="rp-chip" onClick={() => {setQuery(p);doSearch(p);}}>{p}</button>)}</div>}
         <div className="results-toolbar"><div className="tabs">{[{key:'combined',label:'All'},{key:'semantic',label:'Semantic'},{key:'keyword',label:'Keyword'},...(results.category?.length?[{key:'category',label:'Category'}]:[])].map(t => <button key={t.key} className={`tab-btn ${activeTab===t.key?'active':''}`} onClick={() => {setActiveTab(t.key);setSelected(new Set());}}>{t.label} ({(results[t.key]||[]).length})</button>)}</div>
         {activeList.length > 0 && <div className="selection-bar"><label className="select-all-label"><input type="checkbox" checked={selected.size>0&&selected.size===activeList.length} onChange={selectAll} /><span>{selected.size>0?`${selected.size} selected`:'Select all'}</span></label>{selected.size>0 && <button className="btn btn-export" onClick={handleExport}><DownloadIcon /> Export</button>}</div>}</div>
