@@ -1,31 +1,43 @@
 'use client';
 import { useState, useEffect } from 'react';
 
-export default function HistoryPanel({ token, onClose, onSearch }) {
+/** Get history from localStorage */
+function getLocalHistory() {
+  try {
+    return JSON.parse(localStorage.getItem('wks_history') || '[]');
+  } catch { return []; }
+}
+
+/** Save history to localStorage */
+function saveLocalHistory(history) {
+  localStorage.setItem('wks_history', JSON.stringify(history.slice(0, 100)));
+}
+
+/** Add a search to history */
+export function addToHistory(query, category, resultCount, elapsed) {
+  if (!query) return;
+  const history = getLocalHistory();
+  history.unshift({
+    id: Date.now(),
+    query,
+    category: category || '',
+    result_count: resultCount,
+    elapsed: elapsed || '',
+    created_at: new Date().toISOString(),
+  });
+  saveLocalHistory(history);
+}
+
+export default function HistoryPanel({ onClose, onSearch }) {
   const [history, setHistory] = useState([]);
-  const [loading, setLoading] = useState(true);
 
-  const fetchHistory = () => {
-    if (!token) return;
-    fetch('/api/history', { headers: { Authorization: `Bearer ${token}` } })
-      .then((r) => r.json())
-      .then((d) => setHistory(d.history || []))
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  };
+  useEffect(() => { setHistory(getLocalHistory()); }, []);
 
-  useEffect(() => { fetchHistory(); }, [token]);
-
-  const deleteItem = async (id, e) => {
+  const deleteItem = (id, e) => {
     e.stopPropagation();
-    try {
-      await fetch('/api/history', {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id }),
-      });
-      setHistory((prev) => prev.filter((h) => h.id !== id));
-    } catch (_) {}
+    const updated = history.filter((h) => h.id !== id);
+    setHistory(updated);
+    saveLocalHistory(updated);
   };
 
   return (
@@ -36,8 +48,7 @@ export default function HistoryPanel({ token, onClose, onSearch }) {
           <button className="modal-close" onClick={onClose}>×</button>
         </div>
         <div className="history-body">
-          {loading && <p className="history-empty">Loading...</p>}
-          {!loading && history.length === 0 && <p className="history-empty">No searches yet. Start searching to build your history.</p>}
+          {history.length === 0 && <p className="history-empty">No searches yet. Start searching to build your history.</p>}
           {history.map((h) => (
             <div key={h.id} className="history-item-wrap">
               <button className="history-item" onClick={() => { onSearch(h.query); onClose(); }}>

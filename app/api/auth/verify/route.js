@@ -1,11 +1,9 @@
 /**
- * POST /api/auth/verify
- * Verify OTP and return JWT token
+ * POST /api/auth/verify — Verify OTP and return JWT token
  */
 
 import { NextResponse } from 'next/server';
-import { verifyOTP, getUserByEmail } from '@/lib/db';
-import { createJWT } from '@/lib/auth';
+import { verifyOTP, createJWT } from '@/lib/auth';
 
 export async function POST(request) {
   try {
@@ -15,26 +13,19 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Email and OTP are required' }, { status: 400 });
     }
 
-    const valid = await verifyOTP(email, otp);
-    if (!valid) {
+    const userInfo = verifyOTP(email, otp);
+    if (!userInfo) {
       return NextResponse.json({ error: 'Invalid or expired OTP' }, { status: 401 });
     }
 
-    const user = await getUserByEmail(email);
-    if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
-    }
-
-    const token = createJWT(user);
+    const token = createJWT(userInfo);
 
     return NextResponse.json({
       success: true,
       token,
       user: {
-        id: user.id,
-        email: user.email,
-        wikiUsername: user.wiki_username,
-        globalWikiUsername: user.global_wiki_username,
+        email: userInfo.email,
+        wikiUsername: userInfo.wikiUsername,
       },
     });
   } catch (err) {

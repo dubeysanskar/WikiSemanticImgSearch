@@ -15,8 +15,6 @@ import { NextResponse } from 'next/server';
 import { searchKeyword, searchByDepicts, searchViaCategories, searchByCategory } from '@/lib/commonsApi';
 import { queryVectorDB, getWikidataLabels } from '@/lib/vectorDb';
 import { decomposeQuery, extractSearchTerms, generateRelatedPrompts, generateCategorySuggestions } from '@/lib/queryProcessor';
-import { getAuthUser } from '@/lib/auth';
-import { saveSearch } from '@/lib/db';
 
 function deduplicate(results) {
   const seen = new Set();
@@ -249,14 +247,6 @@ export async function POST(request) {
     }
 
     const elapsed = ((Date.now() - start) / 1000).toFixed(2);
-
-    // Save to history for authenticated users (non-blocking)
-    try {
-      const authUser = getAuthUser(request);
-      if (authUser && query) {
-        saveSearch(authUser.id, query, category, combined.length, elapsed).catch(() => {});
-      }
-    } catch (_) { /* ignore auth errors */ }
 
     return NextResponse.json({
       keyword: keywordResults.slice(0, maxResults),
