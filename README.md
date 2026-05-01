@@ -10,12 +10,30 @@ Queries like *"people cooking street food in Indian night markets"* or *"foggy m
 
 ## Features
 
+### Search
 - **Natural Language Search** — describe what you're looking for in plain English
 - **AI Vision Embeddings** — uses Wikidata Vector DB with CLIP/OpenCLIP/SigLIP models for semantic understanding
-- **Structured Data Matching** — maps semantic concepts to Commons images via P180 (depicts) statements
+- **Special Search** — find a specific Commons file by exact filename (`File:Filename.jpg`)
+- **NLP Query Decomposition** — long, complex prompts are broken into focused sub-concepts and searched in parallel
+- **Smart No-Results** — when no results are found, get clickable simplified prompt suggestions
+- **Autocomplete** — real-time suggestions while typing (topics + categories)
+- **Related Searches** — clickable related prompts after search results
+
+### Filtering & Organization
 - **Category Browsing** — target specific Wiki Loves campaigns (Monuments, Folklore, Birds)
+- **Category Search** — search and browse any Commons category by name
 - **Resolution Filtering** — filter by exact dimensions or minimum width/height with pixel tolerance
 - **Custom Categories** — search within any Commons category
+
+### Authentication & History
+- **OTP Login** — secure email-based OTP authentication via NodeMailer
+- **JWT Sessions** — 24-hour token-based sessions
+- **Search History** — all searches saved per user, viewable in a slide-out panel
+- **History Management** — click to re-search, × to delete individual entries
+- **User Stats** — "Happy users" counter in header
+
+### Export
+- **Excel Export** — select images and export metadata to `.xlsx` files
 
 ## Quick Start
 
@@ -29,7 +47,7 @@ Queries like *"people cooking street food in Indian night markets"* or *"foggy m
 git clone https://github.com/dubeysanskar/WikiSemanticImgSearch.git
 cd WikiSemanticImgSearch
 cp .env.example .env.local
-# Edit .env.local with your MediaWiki username
+# Edit .env.local with your credentials (see Environment Variables below)
 npm install
 npm run dev
 ```
@@ -41,37 +59,51 @@ Open [http://localhost:3000](http://localhost:3000).
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `MEDIAWIKI_USERNAME` | Yes | Your MediaWiki username (for User-Agent compliance) |
-| `API_TIMEOUT` | No | API request timeout in ms (default: 30000) |
+| `JWT_SECRET` | Yes | Secret key for JWT token signing |
+| `SMTP_HOST` | Yes | SMTP server host (e.g. `smtp.gmail.com`) |
+| `SMTP_PORT` | Yes | SMTP port (e.g. `587`) |
+| `SMTP_USER` | Yes | SMTP email address |
+| `SMTP_PASS` | Yes | SMTP password or App Password |
+| `SMTP_FROM` | No | From address for OTP emails |
+| `TURSO_DATABASE_URL` | No | Turso database URL (for Vercel deployment) |
+| `TURSO_AUTH_TOKEN` | No | Turso auth token |
+
+> **Gmail users:** Use an [App Password](https://myaccount.google.com/apppasswords) instead of your regular password.
+
+> **Database:** Locally uses SQLite file (`wikisearch.db`). For Vercel, set up a free [Turso](https://turso.tech) database.
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────┐
-│                    User Query                     │
-│          "foggy mountains at sunrise"             │
-└──────────────────┬──────────────────┬────────────┘
-                   │                  │
-     ┌─────────────▼──────┐  ┌───────▼────────────┐
-     │  Wikidata Vector DB │  │  Commons Keyword   │
-     │  (AI Embeddings)    │  │  Search API        │
-     │  → Q-Items + Scores │  │  → Direct Matches  │
-     └─────────┬───────────┘  └───────┬────────────┘
-               │                      │
-     ┌─────────▼───────────┐          │
-     │  Commons SDC Search │          │
-     │  haswbstatement:    │          │
-     │  P180=Q12345        │          │
-     └─────────┬───────────┘          │
-               │                      │
-     ┌─────────▼──────────────────────▼────────────┐
-     │         Merge, Deduplicate, Rank             │
-     │         (Semantic → Keyword → Category)      │
-     └──────────────────┬──────────────────────────┘
-                        │
-     ┌──────────────────▼──────────────────────────┐
-     │              Results UI                       │
-     │    Tabs: Combined | Semantic | Keyword        │
-     └─────────────────────────────────────────────┘
+│                    User Query                    │
+│     "pictures of 19th century Indian temples"    │
+└──────────────────┬───────────────────────────────┘
+                   │
+        ┌──────────▼──────────┐
+        │  NLP Decomposition  │
+        │  → Sub-concepts     │
+        └──────────┬──────────┘
+                   │
+     ┌─────────────┼─────────────┐
+     │             │             │
+┌────▼─────┐ ┌────▼─────┐ ┌────▼──────┐
+│ Keyword  │ │ Vector   │ │ Category  │
+│ Search   │ │ DB × N   │ │ Fallback  │
+│ (API)    │ │ (Parallel│ │ (API)     │
+└────┬─────┘ └────┬─────┘ └────┬──────┘
+     │             │             │
+     └─────────────┼─────────────┘
+                   │
+     ┌─────────────▼─────────────┐
+     │  Merge, Deduplicate, Rank │
+     │  → Save to History (JWT)  │
+     └─────────────┬─────────────┘
+                   │
+     ┌─────────────▼─────────────┐
+     │        Results UI          │
+     │  Tabs | Export | Details   │
+     └───────────────────────────┘
 ```
 
 ### APIs Used
@@ -89,25 +121,43 @@ Open [http://localhost:3000](http://localhost:3000).
 - **Vanilla CSS** — Professional light theme, responsive
 - **Wikidata Vector DB** — AI embeddings (CLIP/OpenCLIP/SigLIP) + Reciprocal Rank Fusion
 - **MediaWiki API** — Image search, metadata, category traversal
+- **@libsql/client** — SQLite database (local file + Turso cloud)
+- **jsonwebtoken** — JWT authentication
+- **nodemailer** — OTP email delivery
 
 ## Project Structure
 
 ```
 WikiSemanticImgSearch/
 ├── app/
-│   ├── layout.js           # Root layout + SEO metadata
-│   ├── page.js             # Main search page (client component)
-│   ├── globals.css          # Light theme design system
+│   ├── layout.js              # Root layout + SEO metadata
+│   ├── page.js                # Main search page (client component)
+│   ├── globals.css            # Design system
+│   ├── components/
+│   │   ├── AuthModal.js       # Login modal (OTP flow)
+│   │   └── HistoryPanel.js    # Search history slide-out
 │   └── api/
-│       └── search/route.js  # Unified search API (keyword + semantic + category)
+│       ├── search/route.js    # Unified search API
+│       ├── search/file/route.js # Special file search
+│       ├── suggest/route.js   # Autocomplete suggestions
+│       ├── categories/route.js # Category search
+│       ├── history/route.js   # Search history (GET/DELETE)
+│       ├── stats/route.js     # User count
+│       └── auth/
+│           ├── register/route.js # Send OTP
+│           ├── verify/route.js   # Verify OTP → JWT
+│           └── me/route.js       # Current user
 ├── lib/
-│   ├── config.js            # Categories, resolutions, API endpoints
-│   ├── commonsApi.js        # MediaWiki Commons API client (JS port)
-│   └── vectorDb.js          # Wikidata Vector DB client
+│   ├── config.js              # Categories, resolutions, API endpoints
+│   ├── commonsApi.js          # MediaWiki Commons API client
+│   ├── vectorDb.js            # Wikidata Vector DB client
+│   ├── queryProcessor.js      # NLP query decomposition engine
+│   ├── db.js                  # SQLite database layer
+│   └── auth.js                # JWT + OTP + Email utilities
 ├── docs/
-│   └── DEVELOPER.md         # Detailed developer documentation
-├── .env.example             # Environment template
-└── README.md                # This file
+│   └── DEVELOPER.md           # Detailed developer documentation
+├── .env.example               # Environment template
+└── README.md                  # This file
 ```
 
 ## Acknowledgements

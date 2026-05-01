@@ -2,9 +2,8 @@
 import { useState } from 'react';
 
 export default function AuthModal({ onClose, onLogin }) {
-  const [step, setStep] = useState('form'); // form | otp
+  const [step, setStep] = useState('form');
   const [email, setEmail] = useState('');
-  const [wikiUsername, setWikiUsername] = useState('');
   const [globalWikiUsername, setGlobalWikiUsername] = useState('');
   const [otp, setOtp] = useState('');
   const [error, setError] = useState('');
@@ -12,17 +11,17 @@ export default function AuthModal({ onClose, onLogin }) {
 
   const handleSendOTP = async (e) => {
     e.preventDefault();
-    if (!email || !wikiUsername || !globalWikiUsername) { setError('All fields required'); return; }
+    if (!email || !globalWikiUsername) { setError('All fields are required'); return; }
     setLoading(true); setError('');
     try {
       const res = await fetch('/api/auth/register', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, wikiUsername, globalWikiUsername }),
+        body: JSON.stringify({ email, wikiUsername: globalWikiUsername, globalWikiUsername }),
       });
       const data = await res.json();
-      if (!res.ok) { setError(data.error || 'Failed'); return; }
+      if (!res.ok) { setError(data.error || 'Failed to send OTP'); return; }
       setStep('otp');
-    } catch (err) { setError('Network error'); }
+    } catch (err) { setError('Network error. Please try again.'); }
     finally { setLoading(false); }
   };
 
@@ -38,7 +37,7 @@ export default function AuthModal({ onClose, onLogin }) {
       const data = await res.json();
       if (!res.ok) { setError(data.error || 'Invalid OTP'); return; }
       onLogin(data.token, data.user);
-    } catch (err) { setError('Network error'); }
+    } catch (err) { setError('Network error. Please try again.'); }
     finally { setLoading(false); }
   };
 
@@ -50,9 +49,8 @@ export default function AuthModal({ onClose, onLogin }) {
         {step === 'form' ? (
           <form onSubmit={handleSendOTP} className="auth-form">
             <p className="auth-desc">Login with your Wikimedia account to save search history.</p>
-            <div className="auth-field"><label>Wikimedia Username</label><input value={wikiUsername} onChange={(e) => setWikiUsername(e.target.value)} placeholder="e.g. Sanskardubeydev" /></div>
-            <div className="auth-field"><label>Global Wikimedia Username</label><input value={globalWikiUsername} onChange={(e) => setGlobalWikiUsername(e.target.value)} placeholder="e.g. Sanskardubeydev" /></div>
-            <div className="auth-field"><label>Email</label><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="your-email@example.com" /></div>
+            <div className="auth-field"><label>Global Wikimedia Username</label><input value={globalWikiUsername} onChange={(e) => setGlobalWikiUsername(e.target.value)} placeholder="Your global username" /></div>
+            <div className="auth-field"><label>Email</label><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" /></div>
             {error && <p className="auth-error">{error}</p>}
             <button className="btn btn-primary auth-submit" disabled={loading}>{loading ? 'Sending OTP...' : 'Send OTP'}</button>
           </form>

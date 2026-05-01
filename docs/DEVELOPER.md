@@ -124,6 +124,84 @@ Each result object:
 }
 ```
 
+## API Route: `GET /api/search/file`
+
+Look up a specific Commons file by exact filename.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | string | File name (with or without `File:` prefix) |
+
+Returns `{ file: { ... } }` or `{ file: null }`.
+
+## API Route: `GET /api/suggest`
+
+Autocomplete endpoint for search suggestions.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `q` | string | Query text (min 2 chars) |
+
+Returns `{ suggestions: [...], categories: [...] }`.
+
+## API Route: `GET /api/categories`
+
+Search Wikimedia Commons categories.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `q` | string | Category search text |
+
+Returns `{ categories: [{ title, label, snippet }] }`.
+
+## Authentication API
+
+### `POST /api/auth/register`
+
+Send OTP to user's email.
+
+```json
+{ "email": "user@example.com", "wikiUsername": "Username", "globalWikiUsername": "Username" }
+```
+
+### `POST /api/auth/verify`
+
+Verify OTP and get JWT token.
+
+```json
+{ "email": "user@example.com", "otp": "123456" }
+```
+
+Returns `{ token: "jwt...", user: { id, email, wikiUsername, globalWikiUsername } }`.
+
+### `GET /api/auth/me`
+
+Get current user. Requires `Authorization: Bearer <token>` header.
+
+## API Route: `GET /api/history`
+
+Returns last 50 searches for authenticated user. Requires JWT.
+
+## API Route: `DELETE /api/history`
+
+Delete a specific history item. Body: `{ "id": 123 }`. Requires JWT.
+
+## API Route: `GET /api/stats`
+
+Public endpoint. Returns `{ totalUsers: N }`.
+
+## Database Schema
+
+SQLite (via `@libsql/client`) with 3 tables:
+
+| Table | Columns |
+|-------|---------|
+| `users` | id, email, wiki_username, global_wiki_username, created_at |
+| `otp_tokens` | id, email, otp, expires_at, used |
+| `search_history` | id, user_id, query, category, result_count, elapsed, created_at |
+
+Locally uses `file:./wikisearch.db`. For Vercel, configure Turso cloud URL.
+
 ## Preset Categories
 
 Categories are sourced from the [jio-commons-screensaver-harvester config](https://github.com/Aditya0545/jio-commons-screensaver-harvester/blob/main/config.py):

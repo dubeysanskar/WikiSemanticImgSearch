@@ -70,6 +70,12 @@ export default function HomePage() {
   const [showAuth, setShowAuth] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [userCount, setUserCount] = useState(0);
+  // Pagination
+  const [visibleCount, setVisibleCount] = useState(40);
+  // Special search
+  const [specialMode, setSpecialMode] = useState(false);
+  const [specialFile, setSpecialFile] = useState(null);
+  const [specialLoading, setSpecialLoading] = useState(false);
 
   // Load auth from localStorage
   useEffect(() => {
@@ -126,12 +132,26 @@ export default function HomePage() {
   const selectAll = useCallback(() => selected.size===activeList.length?setSelected(new Set()):setSelected(new Set(activeList.map((_,i)=>i))), [activeList, selected]);
   const handleExport = useCallback(() => { const items = activeList.filter((_,i)=>selected.has(i)); if(items.length) exportToExcel(items); }, [activeList, selected]);
   const resetFilters = useCallback(() => { setSelectedCategory(''); setCustomCategory(''); setResPreset(0); setCustomWidth(''); setCustomHeight(''); setCatQ(''); }, []);
-  const resetSearch = useCallback(() => { setQuery(''); setResults(null); setSelected(new Set()); }, []);
+  const resetSearch = useCallback(() => { setQuery(''); setResults(null); setSelected(new Set()); setSpecialFile(null); setVisibleCount(40); }, []);
+  const newSearch = useCallback(() => { resetSearch(); resetFilters(); setSpecialMode(false); }, [resetSearch, resetFilters]);
+
+  const doSpecialSearch = useCallback(async () => {
+    let name = query.trim();
+    if (!name) return;
+    setSpecialLoading(true); setSpecialFile(null); setResults(null);
+    try {
+      const r = await fetch(`/api/search/file?name=${encodeURIComponent(name)}`);
+      const d = await r.json();
+      setSpecialFile(d.file || null);
+      if (!d.file) setSpecialFile('not_found');
+    } catch(_) { setSpecialFile('not_found'); }
+    finally { setSpecialLoading(false); }
+  }, [query]);
 
   const doSearch = useCallback(async (q, cat) => {
     const sq = q || query; const sc = cat ?? (customCategory || selectedCategory);
     if (!sq.trim() && !sc) return;
-    setLoading(true); setResults(null); setSelected(new Set()); setShowSugg(false);
+    setLoading(true); setResults(null); setSelected(new Set()); setShowSugg(false); setVisibleCount(40);
     const preset = RESOLUTION_PRESETS[resPreset];
     const body = { query: sq.trim(), mode: 'combined', category: sc || '', minWidth: preset?.width||(customWidth?Number(customWidth):null), minHeight: preset?.height||(customHeight?Number(customHeight):null), maxResults: 40 };
     const headers = { 'Content-Type': 'application/json' };
@@ -147,6 +167,7 @@ export default function HomePage() {
       <a href="/" className="header-logo"><img src="/commons-logo.svg" alt="" width="24" height="24" /><span>WikiSemanticImgSearch</span></a>
       <nav className="header-nav">
         {userCount > 0 && <span className="user-count">👥 {userCount} users</span>}
+        <button className="nav-btn" onClick={newSearch}>✨ New Search</button>
         {user && <button className="nav-btn" onClick={() => setShowHistory(true)}>📋 History</button>}
         {user ? (
           <><span className="nav-user">Hi, {user.wikiUsername}</span><button className="nav-btn nav-logout" onClick={handleLogout}>Logout</button></>
@@ -161,12 +182,20 @@ export default function HomePage() {
       <h1>Semantic Image Search for Wikimedia Commons</h1>
       <p>Search millions of freely-licensed images using natural language. Powered by AI vision embeddings and the Wikidata Vector Database.</p>
       <div className="search-area" ref={sugRef}>
-        <form onSubmit={(e) => { e.preventDefault(); doSearch(); }} className="search-box">
+        <div className="search-mode-toggle">
+          <button className={`smt-btn ${!specialMode?'active':''}`} onClick={() => setSpecialMode(false)}>🔍 Semantic Search</button>
+          <button className={`smt-btn ${specialMode?'active':''}`} onClick={() => setSpecialMode(true)}>📄 Special Search</button>
+        </div>
+        <form onSubmit={(e) => { e.preventDefault(); specialMode ? doSpecialSearch() : doSearch(); }} className="search-box">
           <SearchIcon />
-          <input className="search-input" type="text" placeholder="Describe what you're looking for..." value={query} onChange={(e) => setQuery(e.target.value)} onFocus={() => { if(suggestions.suggestions.length||suggestions.categories.length) setShowSugg(true); }} />
+          <input className="search-input" type="text" placeholder={specialMode ? 'Enter exact filename, e.g. Taj_Mahal.jpg' : "Describe what you're looking for..."} value={query} onChange={(e) => setQuery(e.target.value)} onFocus={() => { if(!specialMode && (suggestions.suggestions.length||suggestions.categories.length)) setShowSugg(true); }} />
           {query && <button type="button" className="search-clear" onClick={resetSearch} title="Reset search">×</button>}
-          <button className="search-btn" type="submit" disabled={loading}>{loading ? 'Searching...' : 'Search'}</button>
+          <button className="search-btn" type="submit" disabled={loading||specialLoading}>{specialLoading?'Looking up...':loading?'Searching...':specialMode?'Find File':'Search'}</button>
         </form>
+        {specialMode && specialFile && specialFile !== 'not_found' && (
+          <div style={{marginTop:16}}><div className="image-card" style={{maxWidth:360,margin:'0 auto'}}><div className="card-clickable" onClick={() => setModalItem(specialFile)}><img className="card-thumb" src={specialFile.thumbUrl} alt={specialFile.title} /><div className="card-body"><div className="card-title">{specialFile.title}</div><div className="card-footer"><span className="badge badge-category">Special</span><span className="card-sub">{specialFile.width}×{specialFile.height}</span></div></div></div></div></div>
+        )}
+        {specialMode && specialFile === 'not_found' && <p style={{color:'#ef4444',marginTop:12,fontSize:'0.85rem'}}>File not found on Wikimedia Commons. Check the filename and try again.</p>}
         {showSugg && (suggestions.suggestions.length > 0 || suggestions.categories.length > 0) && (
           <div className="autocomplete-dropdown">
             {suggestions.suggestions.length > 0 && <div className="ac-section"><div className="ac-section-title"><SearchIcon /> Suggestions</div>{suggestions.suggestions.map((s,i) => <button key={i} className="ac-item" onClick={() => {setQuery(s);setShowSugg(false);doSearch(s);}}>{s}</button>)}</div>}
@@ -204,7 +233,7 @@ export default function HomePage() {
             <div className="smart-fallbacks">{getSmartFallbacks(results.meta?.query || query).map((s,i) => <button key={i} className="chip smart-chip" onClick={() => {setQuery(s);doSearch(s);}}>{s}</button>)}</div>
           </div>
         ) : (
-          <div className="results-grid">{activeList.map((item,i) => (
+          <><div className="results-grid">{activeList.slice(0, visibleCount).map((item,i) => (
             <div key={`${item.pageId}-${i}`} className={`image-card ${selected.has(i)?'card-selected':''}`}>
               <label className="card-checkbox" onClick={e => e.stopPropagation()}><input type="checkbox" checked={selected.has(i)} onChange={() => toggleSelect(i)} /></label>
               <div className="card-clickable" onClick={() => setModalItem(item)}>
@@ -213,7 +242,9 @@ export default function HomePage() {
               </div>
             </div>
           ))}</div>
-        )}
+          {visibleCount < activeList.length && <div style={{textAlign:'center',padding:'24px 0'}}><button className="btn btn-primary load-more-btn" onClick={() => setVisibleCount(v => v + 40)}>Load More ({activeList.length - visibleCount} remaining)</button></div>}
+          {visibleCount >= activeList.length && activeList.length > 40 && <p style={{textAlign:'center',color:'var(--text-muted)',fontSize:'0.82rem',padding:'16px 0'}}>All {activeList.length} images loaded</p>}
+          </>)}
       </>)}
       {!results && !loading && <div className="empty-state" style={{paddingTop:80}}><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg><h3>Search Wikimedia Commons</h3><p>Type a natural language description or select a category to discover images.</p></div>}
     </section>

@@ -451,3 +451,36 @@ button { cursor: pointer; font-family: var(--font); }
 .smart-fallbacks { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 16px; }
 .smart-chip { font-size: 0.82rem !important; padding: 8px 18px !important; background: var(--accent-light) !important; border-color: var(--accent) !important; color: var(--accent) !important; }
 .smart-chip:hover { background: var(--accent) !important; color: #fff !important; }
+
+/* ─── SEARCH MODE TOGGLE ─── */
+.search-mode-toggle {
+  display: flex; gap: 4px; margin-bottom: 10px;
+  background: var(--bg-muted); border-radius: var(--radius); padding: 3px;
+}
+.smt-btn {
+  flex: 1; padding: 7px 14px; border: none; background: none;
+  font-family: var(--font); font-size: 0.8rem; font-weight: 500;
+  border-radius: calc(var(--radius) - 2px); cursor: pointer;
+  color: var(--text-muted); transition: all var(--transition);
+}
+.smt-btn.active {
+  background: var(--bg); color: var(--text);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+/* ─── HISTORY ITEM WITH DELETE ─── */
+.history-item-wrap {
+  display: flex; align-items: center; gap: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.history-item-wrap .history-item { flex: 1; }
+.history-delete {
+  background: none; border: none; color: var(--text-muted);
+  font-size: 1.1rem; width: 28px; height: 28px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: all var(--transition); flex-shrink: 0;
+}
+.history-delete:hover { background: #fef2f2; color: #ef4444; }
+
+/* ─── LOAD MORE ─── */
+.load-more-btn { padding: 12px 40px; font-size: 0.9rem; border-radius: var(--radius-lg); }
