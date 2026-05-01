@@ -19,9 +19,9 @@ export default function AuthModal({ onClose, onLogin }) {
         body: JSON.stringify({ email, wikiUsername: globalWikiUsername, globalWikiUsername }),
       });
       const data = await res.json();
-      if (!res.ok) { setError(data.error || 'Failed to send OTP'); return; }
+      if (!res.ok) { setError(data.details || data.error || 'Failed to send OTP'); return; }
       setStep('otp');
-    } catch (err) { setError('Network error. Please try again.'); }
+    } catch (err) { setError('Network error: ' + err.message); }
     finally { setLoading(false); }
   };
 
