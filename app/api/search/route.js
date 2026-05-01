@@ -74,11 +74,15 @@ export async function POST(request) {
       minHeight = null,
       pixelTolerance = 20,
       maxResults = 80,
+      mediaWikiUser = '',
     } = body;
 
     if (!query && !category) {
       return NextResponse.json({ error: 'Query or category required' }, { status: 400 });
     }
+
+    // Use the user's MediaWiki username for API etiquette
+    if (mediaWikiUser) process.env.MEDIAWIKI_USERNAME = mediaWikiUser;
 
     const start = Date.now();
     let keywordResults = [];

@@ -492,3 +492,48 @@ button { cursor: pointer; font-family: var(--font); }
   border-color: #ef4444; color: #ef4444;
 }
 .reset-search-btn:hover { background: #fef2f2; }
+
+/* ─── AUTOCOMPLETE DROPDOWN ─── */
+.autocomplete-dropdown {
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 100;
+  background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  box-shadow: 0 8px 30px rgba(0,0,0,0.12); max-height: 340px; overflow-y: auto;
+  animation: dropIn 0.15s ease-out;
+}
+@keyframes dropIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+.ac-section { padding: 4px 0; }
+.ac-section + .ac-section { border-top: 1px solid var(--border); }
+.ac-section-title {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 16px 4px; font-size: 0.68rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted);
+}
+.ac-item {
+  display: block; width: 100%; text-align: left; padding: 10px 16px;
+  border: none; background: none; font: inherit; font-size: 0.85rem; color: var(--text);
+  cursor: pointer; transition: background 0.1s;
+}
+.ac-item:hover { background: var(--accent-light); }
+.ac-item-cat { color: var(--category); font-weight: 500; }
+.ac-item-cat:hover { background: var(--category-bg); }
+
+/* ─── USERNAME PROMPT ─── */
+.username-modal {
+  position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.4); backdrop-filter: blur(4px);
+  animation: fadeIn 0.2s ease;
+}
+.username-card {
+  background: var(--bg); border-radius: var(--radius-lg); padding: 32px;
+  max-width: 420px; width: 90%; box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+}
+.username-card h3 { font-size: 1.15rem; margin-bottom: 4px; }
+.username-card p { font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 16px; }
+.username-card input {
+  width: 100%; padding: 10px 14px; border: 1.5px solid var(--border); border-radius: var(--radius);
+  font: inherit; font-size: 0.9rem; margin-bottom: 12px; transition: border-color 0.2s;
+}
+.username-card input:focus { border-color: var(--accent); outline: none; }
+.username-card .btn-row { display: flex; gap: 8px; }
+.username-card .btn-row .btn { flex: 1; }
+.username-error { color: #ef4444; font-size: 0.78rem; margin-bottom: 8px; }

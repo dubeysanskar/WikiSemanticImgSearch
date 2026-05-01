@@ -75,12 +75,21 @@ export default function HomePage() {
   const [specialMode, setSpecialMode] = useState(false);
   const [specialFile, setSpecialFile] = useState(null);
   const [specialLoading, setSpecialLoading] = useState(false);
+  // MediaWiki username
+  const [mediaWikiUser, setMediaWikiUser] = useState('');
+  const [showUsernamePrompt, setShowUsernamePrompt] = useState(false);
+  const [usernameInput, setUsernameInput] = useState('');
+  const [usernameError, setUsernameError] = useState('');
+  const [usernameLoading, setUsernameLoading] = useState(false);
+  const [pendingSearch, setPendingSearch] = useState(null);
 
   // Load auth from localStorage
   useEffect(() => {
     const t = localStorage.getItem('wks_token');
     const u = localStorage.getItem('wks_user');
-    if (t && u) { setToken(t); setUser(JSON.parse(u)); }
+    if (t && u) { setToken(t); setUser(JSON.parse(u)); setMediaWikiUser(JSON.parse(u).wikiUsername || ''); }
+    const savedMwUser = localStorage.getItem('wks_mw_user');
+    if (savedMwUser) setMediaWikiUser(savedMwUser);
   }, []);
 
   const handleLogin = (t, u) => {
@@ -88,6 +97,7 @@ export default function HomePage() {
     localStorage.setItem('wks_token', t);
     localStorage.setItem('wks_user', JSON.stringify(u));
     setShowAuth(false);
+    if (u.wikiUsername) { setMediaWikiUser(u.wikiUsername); localStorage.setItem('wks_mw_user', u.wikiUsername); }
   };
 
   const handleLogout = () => {
@@ -148,14 +158,32 @@ export default function HomePage() {
   const doSearch = useCallback(async (q, cat) => {
     const sq = q || query; const sc = cat ?? (customCategory || selectedCategory);
     if (!sq.trim() && !sc) return;
+    // Require MediaWiki username
+    if (!mediaWikiUser) { setPendingSearch({ q: sq, cat: sc }); setShowUsernamePrompt(true); return; }
     setLoading(true); setResults(null); setSelected(new Set()); setShowSugg(false); setVisibleCount(40);
     const preset = RESOLUTION_PRESETS[resPreset];
-    const body = { query: sq.trim(), mode: 'combined', category: sc || '', minWidth: preset?.width||(customWidth?Number(customWidth):null), minHeight: preset?.height||(customHeight?Number(customHeight):null), maxResults: 80 };
+    const body = { query: sq.trim(), mode: 'combined', category: sc || '', minWidth: preset?.width||(customWidth?Number(customWidth):null), minHeight: preset?.height||(customHeight?Number(customHeight):null), maxResults: 80, mediaWikiUser };
     const headers = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
     try { const r = await fetch('/api/search', { method:'POST', headers, body: JSON.stringify(body) }); const d = await r.json(); setResults(d); setActiveTab('combined'); } catch(e) { console.error(e); }
     finally { setLoading(false); }
-  }, [query, selectedCategory, customCategory, resPreset, customWidth, customHeight, token]);
+  }, [query, selectedCategory, customCategory, resPreset, customWidth, customHeight, token, mediaWikiUser]);
+
+  // Handle username verification
+  const verifyAndSetUsername = useCallback(async () => {
+    if (!usernameInput.trim()) { setUsernameError('Please enter a username'); return; }
+    setUsernameLoading(true); setUsernameError('');
+    try {
+      const r = await fetch(`/api/auth/verify-username?username=${encodeURIComponent(usernameInput.trim())}`);
+      const d = await r.json();
+      if (d.valid) {
+        setMediaWikiUser(d.username); localStorage.setItem('wks_mw_user', d.username);
+        setShowUsernamePrompt(false); setUsernameInput('');
+        if (pendingSearch) { setTimeout(() => doSearch(pendingSearch.q, pendingSearch.cat), 100); setPendingSearch(null); }
+      } else { setUsernameError(d.error || 'Username not found'); }
+    } catch { setUsernameError('Verification failed'); }
+    finally { setUsernameLoading(false); }
+  }, [usernameInput, pendingSearch, doSearch]);
 
   const filtersActive = selectedCategory || customCategory || resPreset > 0 || customWidth || customHeight;
 
@@ -165,6 +193,7 @@ export default function HomePage() {
       <nav className="header-nav">
         <button className="nav-btn" onClick={newSearch}>✨ New Search</button>
         <button className="nav-btn" onClick={() => setShowHistory(true)}>📋 History</button>
+        {mediaWikiUser && <span className="nav-user" title="MediaWiki username" style={{fontSize:'0.75rem',opacity:0.8}}>👤 {mediaWikiUser}</span>}
         {user ? (
           <><span className="nav-user">Hi, {user.wikiUsername}</span><button className="nav-btn nav-logout" onClick={handleLogout}>Logout</button></>
         ) : (
@@ -249,6 +278,29 @@ export default function HomePage() {
 
     {showAuth && <AuthModal onClose={() => setShowAuth(false)} onLogin={handleLogin} />}
     {showHistory && <HistoryPanel token={token} onClose={() => setShowHistory(false)} onSearch={(q) => {setQuery(q);doSearch(q);}} />}
+
+    {showUsernamePrompt && (
+      <div className="username-modal" onClick={() => { setShowUsernamePrompt(false); setPendingSearch(null); }}>
+        <div className="username-card" onClick={e => e.stopPropagation()}>
+          <h3>👤 Enter Your Wikimedia Username</h3>
+          <p>A valid Commons / MediaWiki username is required to use the search API. This identifies your requests per <a href="https://www.mediawiki.org/wiki/API:Etiquette" target="_blank" rel="noopener noreferrer">MediaWiki API etiquette</a>.</p>
+          <input
+            placeholder="e.g. Sanskardubeydev"
+            value={usernameInput}
+            onChange={e => setUsernameInput(e.target.value)}
+            onKeyDown={e => { if(e.key==='Enter') verifyAndSetUsername(); }}
+            autoFocus
+          />
+          {usernameError && <p className="username-error">{usernameError}</p>}
+          <div className="btn-row">
+            <button className="btn btn-outline" onClick={() => { setShowUsernamePrompt(false); setPendingSearch(null); }}>Cancel</button>
+            <button className="btn btn-primary" onClick={verifyAndSetUsername} disabled={usernameLoading}>
+              {usernameLoading ? 'Verifying...' : 'Verify & Continue'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
 
     <footer className="footer"><p>Semantic Image Search for <a href="https://commons.wikimedia.org" target="_blank" rel="noopener noreferrer">Wikimedia Commons</a></p><p className="sub">Powered by <a href="https://wd-vectordb.wmcloud.org/docs" target="_blank" rel="noopener noreferrer">Wikidata Vector DB</a> · <a href="https://www.mediawiki.org/wiki/API:Main_page" target="_blank" rel="noopener noreferrer">MediaWiki API</a> · All images under free licenses</p><p className="sub" style={{marginTop:8}}>Made with ❤️ by <a href="https://meta.wikimedia.org/wiki/User:Sanskardubeydev" target="_blank" rel="noopener noreferrer">Sanskardubeydev</a> in collaboration with <a href="https://meta.wikimedia.org/wiki/User:Shadabgdg" target="_blank" rel="noopener noreferrer">Shadabgdg</a></p></footer>
   </>);
