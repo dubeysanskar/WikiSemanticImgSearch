@@ -1,13 +1,15 @@
 'use client';
 import { useState, useEffect } from 'react';
+import { useSession } from 'next-auth/react';
 
-export default function HistoryPanel({ token, onClose, onSearch }) {
+export default function HistoryPanel({ onClose, onSearch }) {
+  const { data: session } = useSession();
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (token) {
-      fetch('/api/history', { headers: { Authorization: `Bearer ${token}` } })
+    if (session?.user) {
+      fetch('/api/history')
         .then(r => r.json())
         .then(d => setHistory(d.history || []))
         .catch(() => {})
@@ -15,21 +17,21 @@ export default function HistoryPanel({ token, onClose, onSearch }) {
     } else {
       setLoading(false);
     }
-  }, [token]);
+  }, [session]);
 
   const deleteItem = async (id, e) => {
     e.stopPropagation();
     try {
       await fetch('/api/history', {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id }),
       });
     } catch (_) {}
     setHistory(prev => prev.filter(h => h.id !== id));
   };
 
-  if (!token) {
+  if (!session?.user) {
     return (
       <div className="history-overlay" onClick={onClose}>
         <div className="history-panel" onClick={(e) => e.stopPropagation()}>

@@ -70,8 +70,6 @@ export default function HomePage() {
   const user = session?.user || null;
   const [showAuth, setShowAuth] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
-  // Legacy token for Turso history (use session-based)
-  const [token, setToken] = useState(null);
   // Pagination
   const [visibleCount, setVisibleCount] = useState(40);
   // Special search
@@ -129,11 +127,12 @@ export default function HomePage() {
   }, [query]);
 
   const doSearch = useCallback(async (q, cat) => {
+    if (!user) { setShowAuth(true); return; }
     const sq = q || query; const sc = cat ?? (customCategory || selectedCategory);
     if (!sq.trim() && !sc) return;
     setLoading(true); setResults(null); setSelected(new Set()); setShowSugg(false); setVisibleCount(40);
     const preset = RESOLUTION_PRESETS[resPreset];
-    const mwUser = user?.wikiUsername || '';
+    const mwUser = user?.wikiUsername || user?.name || '';
     const body = { query: sq.trim(), mode: 'combined', category: sc || '', minWidth: preset?.width||(customWidth?Number(customWidth):null), minHeight: preset?.height||(customHeight?Number(customHeight):null), maxResults: 80, mediaWikiUser: mwUser };
     const headers = { 'Content-Type': 'application/json' };
     try { const r = await fetch('/api/search', { method:'POST', headers, body: JSON.stringify(body) }); const d = await r.json(); setResults(d); setActiveTab('combined'); } catch(e) { console.error(e); }
@@ -201,6 +200,7 @@ export default function HomePage() {
       {loading && <div className="loading-area"><div className="spinner" /><p>Searching Wikimedia Commons with AI embeddings...</p></div>}
       {results && !loading && (<>
         <div className="results-header"><h2>Results{results.meta?.query ? ` for "${results.meta.query}"` : ''}</h2><div className="results-meta"><span>{activeList.length} images</span>{results.meta?.elapsed && <span>{results.meta.elapsed}s</span>}<button className="btn btn-outline reset-search-btn" onClick={newSearch}><ResetIcon /> Reset</button></div></div>
+        {results.meta?.isComplex && results.meta?.subQueries?.length > 1 && <div className="sub-queries-info"><span className="sq-label">🔍 Sub-queries used:</span>{results.meta.subQueries.map((sq,i) => <span key={i} className="sq-chip">{sq}</span>)}</div>}
         {results.relatedPrompts?.length > 0 && <div className="related-prompts"><span className="rp-label">Related searches:</span>{results.relatedPrompts.map((p,i) => <button key={i} className="rp-chip" onClick={() => {setQuery(p);doSearch(p);}}>{p}</button>)}</div>}
         <div className="results-toolbar"><div className="tabs">{[{key:'combined',label:'All'},{key:'semantic',label:'Semantic'},{key:'keyword',label:'Keyword'},...(results.category?.length?[{key:'category',label:'Category'}]:[])].map(t => <button key={t.key} className={`tab-btn ${activeTab===t.key?'active':''}`} onClick={() => {setActiveTab(t.key);setSelected(new Set());}}>{t.label} ({(results[t.key]||[]).length})</button>)}</div>
         {activeList.length > 0 && <div className="selection-bar"><label className="select-all-label"><input type="checkbox" checked={selected.size>0&&selected.size===activeList.length} onChange={selectAll} /><span>{selected.size>0?`${selected.size} selected`:'Select all'}</span></label>{selected.size>0 && <button className="btn btn-export" onClick={handleExport}><DownloadIcon /> Export</button>}</div>}</div>
@@ -231,7 +231,7 @@ export default function HomePage() {
     {modalItem && <div className="modal-overlay" onClick={() => setModalItem(null)}><div className="modal-card" onClick={e => e.stopPropagation()}><div className="modal-grid"><div className="modal-img-wrap"><img src={modalItem.thumbUrl} alt={modalItem.title} /></div><div className="modal-info"><button className="modal-close" onClick={() => setModalItem(null)}>×</button><h3>{modalItem.title}</h3><div className="modal-meta"><div className="meta-row"><span className="meta-label">Author</span><span className="meta-value">{modalItem.author}</span></div><div className="meta-row"><span className="meta-label">License</span><span className="meta-value">{modalItem.license||'Unknown'}</span></div><div className="meta-row"><span className="meta-label">Resolution</span><span className="meta-value">{modalItem.width&&modalItem.height?`${modalItem.width}×${modalItem.height}`:'N/A'}</span></div><div className="meta-row"><span className="meta-label">Found via</span><span className={`badge badge-${modalItem.source}`}>{modalItem.source==='both'?'Keyword + Semantic':modalItem.source}</span></div>{modalItem.wikidataLabel && <div className="meta-row"><span className="meta-label">Wikidata</span><span className="meta-value">{modalItem.wikidataLabel}</span></div>}</div>{modalItem.description && <p className="modal-desc">{modalItem.description}</p>}<div className="modal-actions"><a className="btn btn-primary" href={modalItem.pageUrl} target="_blank" rel="noopener noreferrer">View on Commons</a><a className="btn btn-outline" href={modalItem.fullUrl} target="_blank" rel="noopener noreferrer">Full Resolution</a></div></div></div></div></div>}
 
     {showAuth && <AuthModal onClose={() => setShowAuth(false)} />}
-    {showHistory && <HistoryPanel token={token} onClose={() => setShowHistory(false)} onSearch={(q) => {setQuery(q);doSearch(q);}} />}
+    {showHistory && <HistoryPanel onClose={() => setShowHistory(false)} onSearch={(q) => {setQuery(q);doSearch(q);}} />}
 
 
     <footer className="footer"><p>Semantic Image Search for <a href="https://commons.wikimedia.org" target="_blank" rel="noopener noreferrer">Wikimedia Commons</a></p><p className="sub">Powered by <a href="https://wd-vectordb.wmcloud.org/docs" target="_blank" rel="noopener noreferrer">Wikidata Vector DB</a> · <a href="https://www.mediawiki.org/wiki/API:Main_page" target="_blank" rel="noopener noreferrer">MediaWiki API</a> · All images under free licenses</p><p className="sub" style={{marginTop:8}}>Made with ❤️ by <a href="https://meta.wikimedia.org/wiki/User:Sanskardubeydev" target="_blank" rel="noopener noreferrer">Sanskardubeydev</a> in collaboration with <a href="https://meta.wikimedia.org/wiki/User:Shadabgdg" target="_blank" rel="noopener noreferrer">Shadabgdg</a></p></footer>

@@ -14,7 +14,8 @@ import { NextResponse } from 'next/server';
 import { searchKeyword, searchByDepicts, searchViaCategories, searchByCategory } from '@/lib/commonsApi';
 import { queryVectorDB, getWikidataLabels } from '@/lib/vectorDb';
 import { decomposeQuery, extractSearchTerms, generateRelatedPrompts, generateCategorySuggestions } from '@/lib/queryProcessor';
-import { getAuthUser } from '@/lib/auth';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth-config';
 import { saveSearch } from '@/lib/db';
 
 function deduplicate(results) {
@@ -270,9 +271,10 @@ export async function POST(request) {
 
     // Save to history for authenticated users (non-blocking)
     try {
-      const authUser = getAuthUser(request);
-      if (authUser && query) {
-        saveSearch(authUser.email, query, category, combined.length, elapsed).catch(() => {});
+      const session = await getServerSession(authOptions);
+      if (session?.user && query) {
+        const email = session.user.email || session.user.wikiUsername;
+        saveSearch(email, query, category, combined.length, elapsed).catch(() => {});
       }
     } catch (_) {}
 
