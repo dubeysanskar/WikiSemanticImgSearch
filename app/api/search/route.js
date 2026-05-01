@@ -111,18 +111,35 @@ export async function POST(request) {
     }
 
     if (query) {
-      // 2. Keyword search — cap at 80 for speed
+      // 2. Keyword search — multiple strategies for complex prompts
       if (mode === 'keyword' || mode === 'combined') {
-        promises.push(
-          searchKeyword(query, { limit: Math.min(maxResults, 80) })
-            .then((data) => ({ type: 'keyword', data }))
-            .catch(() => ({ type: 'keyword', data: [] }))
-        );
-
-        // Cleaned terms (filler removed) — only if different
-        if (cleanedTerms && cleanedTerms !== query.trim()) {
+        // Strategy A: cleaned terms (filler removed, max 6 words)
+        if (cleanedTerms) {
           promises.push(
-            searchKeyword(cleanedTerms, { limit: 20 })
+            searchKeyword(cleanedTerms, { limit: Math.min(maxResults, 40) })
+              .then((data) => ({ type: 'keyword', data }))
+              .catch(() => ({ type: 'keyword', data: [] }))
+          );
+        }
+
+        // Strategy B: for complex queries, try the top 2-3 word sub-queries
+        if (decomposed?.isComplex && decomposed.subQueries.length > 1) {
+          const shortQueries = decomposed.subQueries
+            .filter(sq => sq.split(' ').length <= 4 && sq !== cleanedTerms)
+            .slice(0, 3);
+          for (const sq of shortQueries) {
+            promises.push(
+              searchKeyword(sq, { limit: 20 })
+                .then((data) => ({ type: 'keyword', data }))
+                .catch(() => ({ type: 'keyword', data: [] }))
+            );
+          }
+        }
+
+        // Strategy C: if query is very different from cleaned, try original too
+        if (cleanedTerms !== query.trim() && query.trim().split(' ').length <= 5) {
+          promises.push(
+            searchKeyword(query.trim(), { limit: 20 })
               .then((data) => ({ type: 'keyword', data }))
               .catch(() => ({ type: 'keyword', data: [] }))
           );
