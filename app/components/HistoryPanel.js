@@ -1,64 +1,59 @@
 'use client';
 import { useState, useEffect } from 'react';
 
-/* ── localStorage helpers (for non-logged-in users) ── */
-function getLocalHistory() {
-  try { return JSON.parse(localStorage.getItem('wks_history') || '[]'); } catch { return []; }
-}
-function saveLocalHistory(history) {
-  localStorage.setItem('wks_history', JSON.stringify(history.slice(0, 100)));
-}
-
-/** Add to local history (called from page.js for non-logged-in users) */
-export function addToLocalHistory(query, category, resultCount, elapsed) {
-  if (!query) return;
-  const history = getLocalHistory();
-  history.unshift({ id: Date.now(), query, category: category || '', result_count: resultCount, elapsed: elapsed || '', created_at: new Date().toISOString() });
-  saveLocalHistory(history);
-}
-
 export default function HistoryPanel({ token, onClose, onSearch }) {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (token) {
-      // Logged in → fetch from Turso via API
       fetch('/api/history', { headers: { Authorization: `Bearer ${token}` } })
         .then(r => r.json())
         .then(d => setHistory(d.history || []))
-        .catch(() => setHistory(getLocalHistory()))
+        .catch(() => {})
         .finally(() => setLoading(false));
     } else {
-      // Not logged in → use localStorage
-      setHistory(getLocalHistory());
       setLoading(false);
     }
   }, [token]);
 
   const deleteItem = async (id, e) => {
     e.stopPropagation();
-    if (token) {
-      try {
-        await fetch('/api/history', {
-          method: 'DELETE',
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id }),
-        });
-      } catch (_) {}
-    } else {
-      // localStorage delete
-      const updated = history.filter(h => h.id !== id);
-      saveLocalHistory(updated);
-    }
+    try {
+      await fetch('/api/history', {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      });
+    } catch (_) {}
     setHistory(prev => prev.filter(h => h.id !== id));
   };
+
+  if (!token) {
+    return (
+      <div className="history-overlay" onClick={onClose}>
+        <div className="history-panel" onClick={(e) => e.stopPropagation()}>
+          <div className="history-header">
+            <h3>📋 Search History</h3>
+            <button className="modal-close" onClick={onClose}>×</button>
+          </div>
+          <div className="history-body">
+            <div className="history-empty">
+              <p style={{fontSize:'2rem',marginBottom:8}}>🔐</p>
+              <p><strong>Login to access your search history</strong></p>
+              <p style={{marginTop:8,fontSize:'0.78rem'}}>Your searches will be saved and synced across all your devices.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="history-overlay" onClick={onClose}>
       <div className="history-panel" onClick={(e) => e.stopPropagation()}>
         <div className="history-header">
-          <h3>📋 Search History {token ? '(synced)' : '(this device)'}</h3>
+          <h3>📋 Search History</h3>
           <button className="modal-close" onClick={onClose}>×</button>
         </div>
         <div className="history-body">
