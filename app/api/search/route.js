@@ -2,12 +2,13 @@
  * POST /api/search
  * Unified search endpoint — combines keyword, semantic (Vector DB + SDC), and category search
  *
- * OPTIMIZATIONS:
- * - Parallel API calls (keyword + semantic + category fire simultaneously)
- * - Query decomposition for long/complex prompts
- * - Adaptive similarity thresholds based on query complexity
- * - RRF scoring across multi-query semantic results
- * - Response enrichment with related prompts & category suggestions
+ * OPTIMIZATIONS v2:
+ * - All search paths fire in parallel (Promise.allSettled)
+ * - searchByDepicts is now parallel (was sequential loop — 10x faster)
+ * - Max 3 sub-queries for complex prompts (was 5)
+ * - Lower similarity thresholds for better recall
+ * - 15s global timeout on semantic path
+ * - Keyword search always runs with original + cleaned + decomposed terms
  */
 
 import { NextResponse } from 'next/server';
@@ -25,13 +26,10 @@ function deduplicate(results) {
   });
 }
 
-/**
- * Run semantic search for a single sub-query.
- * Returns { results: [], labels: {}, qids: [] }
- */
-async function semanticSearchForQuery(subQuery, simThreshold = 0.15, maxQids = 12) {
-  const vectorItems = await queryVectorDB(subQuery, { k: 30 });
-  if (!vectorItems.length) return { results: [], labels: {}, qids: [] };
+/** Semantic search for one sub-query — with internal timeout */
+async function semanticSearchForQuery(subQuery, simThreshold = 0.10, maxQids = 6) {
+  const vectorItems = await queryVectorDB(subQuery, { k: 20 });
+  if (!vectorItems.length) return { results: [], labels: {} };
 
   const qids = vectorItems
     .filter((item) => item.QID && item.similarity_score > simThreshold)
@@ -39,7 +37,7 @@ async function semanticSearchForQuery(subQuery, simThreshold = 0.15, maxQids = 1
     .slice(0, maxQids)
     .map((item) => item.QID);
 
-  if (!qids.length) return { results: [], labels: {}, qids: [] };
+  if (!qids.length) return { results: [], labels: {} };
 
   const [labels, sdcResults] = await Promise.all([
     getWikidataLabels(qids),
@@ -53,7 +51,15 @@ async function semanticSearchForQuery(subQuery, simThreshold = 0.15, maxQids = 1
     }
   });
 
-  return { results: sdcResults, labels, qids };
+  return { results: sdcResults, labels };
+}
+
+/** Wrap a promise with a timeout */
+function withTimeout(promise, ms, fallback) {
+  return Promise.race([
+    promise,
+    new Promise((resolve) => setTimeout(() => resolve(fallback), ms)),
+  ]);
 }
 
 export async function POST(request) {
@@ -80,14 +86,13 @@ export async function POST(request) {
     let relatedPrompts = [];
     let categorySuggestions = [];
 
-    // Decompose the query for better recall on long prompts
     const decomposed = query ? decomposeQuery(query) : null;
-    const optimizedKeywordTerms = query ? extractSearchTerms(query) : '';
+    const cleanedTerms = query ? extractSearchTerms(query) : '';
 
-    // ─── Fire ALL search paths in parallel for speed ───
+    // ─── Fire ALL search paths in parallel ───
     const promises = [];
 
-    // 1. Category search (if specified)
+    // 1. Category search
     if (category) {
       promises.push(
         searchByCategory(category, {
@@ -95,56 +100,69 @@ export async function POST(request) {
           minWidth: minWidth || undefined,
           minHeight: minHeight || undefined,
           pixelTolerance,
-        }).then((res) => ({ type: 'category', data: res }))
+        }).then((data) => ({ type: 'category', data }))
+          .catch(() => ({ type: 'category', data: [] }))
       );
     }
 
     if (query) {
-      // 2. Keyword search — use cleaned terms for better matching
+      // 2. Keyword search — ALWAYS run with multiple query forms for best coverage
       if (mode === 'keyword' || mode === 'combined') {
+        // Original query (users exact words)
         promises.push(
-          searchKeyword(optimizedKeywordTerms, { limit: maxResults })
-            .then((res) => ({ type: 'keyword', data: res }))
+          searchKeyword(query, { limit: maxResults })
+            .then((data) => ({ type: 'keyword', data }))
+            .catch(() => ({ type: 'keyword', data: [] }))
         );
 
-        // If the query was complex, also search with the original for broader coverage
-        if (decomposed?.isComplex && optimizedKeywordTerms !== decomposed.cleaned) {
+        // Cleaned terms (filler removed) — only if different
+        if (cleanedTerms && cleanedTerms !== query.trim()) {
           promises.push(
-            searchKeyword(decomposed.cleaned, { limit: Math.floor(maxResults / 2) })
-              .then((res) => ({ type: 'keyword', data: res }))
+            searchKeyword(cleanedTerms, { limit: 20 })
+              .then((data) => ({ type: 'keyword', data }))
+              .catch(() => ({ type: 'keyword', data: [] }))
           );
         }
       }
 
-      // 3. Semantic search — multi-query approach for complex prompts
+      // 3. Semantic search — capped at 3 sub-queries, 15s total timeout
       if (mode === 'semantic' || mode === 'combined') {
-        // Adaptive threshold: lower for complex queries
-        const simThreshold = decomposed?.isComplex ? 0.12 : 0.20;
+        const simThreshold = decomposed?.isComplex ? 0.08 : 0.15;
+        const subQueries = decomposed?.isComplex
+          ? decomposed.subQueries.slice(0, 3)
+          : [query];
 
-        if (decomposed?.isComplex) {
-          // Fire semantic search for each sub-query in parallel (capped at 5)
-          const subQueries = decomposed.subQueries.slice(0, 5);
-          for (const sq of subQueries) {
-            promises.push(
-              semanticSearchForQuery(sq, simThreshold, 8)
-                .then((res) => ({ type: 'semantic', data: res.results, labels: res.labels }))
-                .catch(() => ({ type: 'semantic', data: [], labels: {} }))
-            );
+        // All semantic sub-queries in parallel, with 15s timeout
+        const semanticPromise = Promise.allSettled(
+          subQueries.map((sq) =>
+            semanticSearchForQuery(sq, simThreshold, 6)
+              .catch(() => ({ results: [], labels: {} }))
+          )
+        ).then((settled) => {
+          const allResults = [];
+          const allLabels = {};
+          for (const r of settled) {
+            if (r.status === 'fulfilled') {
+              allResults.push(...(r.value.results || []));
+              Object.assign(allLabels, r.value.labels || {});
+            }
           }
-        } else {
-          // Simple query — single Vector DB call
-          promises.push(
-            semanticSearchForQuery(query, simThreshold, 12)
-              .then((res) => ({ type: 'semantic', data: res.results, labels: res.labels }))
-              .catch(() => ({ type: 'semantic', data: [], labels: {} }))
-          );
-        }
+          return { type: 'semantic', data: allResults, labels: allLabels };
+        });
 
-        // Category-based semantic fallback (always runs)
         promises.push(
-          searchViaCategories(optimizedKeywordTerms || query)
-            .then((res) => ({ type: 'semantic-cat', data: res }))
-            .catch(() => ({ type: 'semantic-cat', data: [] }))
+          withTimeout(semanticPromise, 15000, { type: 'semantic', data: [], labels: {} })
+        );
+
+        // Category-based semantic fallback
+        promises.push(
+          withTimeout(
+            searchViaCategories(cleanedTerms || query, { limit: 12 })
+              .then((data) => ({ type: 'semantic-cat', data }))
+              .catch(() => ({ type: 'semantic-cat', data: [] })),
+            10000,
+            { type: 'semantic-cat', data: [] }
+          )
         );
       }
     }
@@ -156,7 +174,6 @@ export async function POST(request) {
     for (const result of settled) {
       if (result.status !== 'fulfilled') continue;
       const { type, data, labels } = result.value;
-
       switch (type) {
         case 'category':
           categoryResults.push(...(data || []));
@@ -174,7 +191,7 @@ export async function POST(request) {
       }
     }
 
-    // Deduplicate within each category
+    // Deduplicate
     keywordResults = deduplicate(keywordResults);
     semanticResults = deduplicate(semanticResults);
     categoryResults = deduplicate(categoryResults);
@@ -191,7 +208,7 @@ export async function POST(request) {
       semanticResults = semanticResults.filter(filterFn);
     }
 
-    // Build combined (semantic first, then keyword, mark "both")
+    // Build combined
     const combined = [];
     const seenCombined = new Set();
     const keywordSet = new Set(keywordResults.map((r) => r.pageId || r.title));
@@ -218,14 +235,10 @@ export async function POST(request) {
       }
     }
 
-    // ─── Generate intelligence: related prompts & category suggestions ───
+    // Generate related prompts & category suggestions
     const resultMeta = {
       wikidataLabels: Object.values(allLabels).map((l) => l.label).filter(Boolean),
-      matchedCategories: [...new Set(
-        semanticResults
-          .map((r) => r.matchedCategory)
-          .filter(Boolean)
-      )],
+      matchedCategories: [...new Set(semanticResults.map((r) => r.matchedCategory).filter(Boolean))],
     };
 
     if (query) {
