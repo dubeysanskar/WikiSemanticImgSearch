@@ -11,12 +11,12 @@ const ResetIcon = () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="n
 const CatIcon = () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>);
 
 const EXAMPLES = [
-  { label: 'Indian street food', query: 'people cooking street food in Indian night markets' },
-  { label: 'Foggy mountains', query: 'foggy mountains in the Western Ghats at sunrise' },
-  { label: 'Temples in monsoon', query: 'photos of 19th century Indian temples during monsoon' },
-  { label: 'Folk dance costumes', query: 'colorful traditional folk dance costumes' },
-  { label: 'Tropical birds', query: 'endangered birds in tropical forests' },
-  { label: 'Castle ruins', query: 'medieval European castle ruins at sunset' },
+  { label: 'Wildlife photography', query: 'wildlife photography animals' },
+  { label: 'Ancient architecture', query: 'ancient architecture historical buildings' },
+  { label: 'Mountain landscapes', query: 'mountain landscape scenery' },
+  { label: 'Cultural festivals', query: 'cultural festival celebration' },
+  { label: 'Ocean and marine life', query: 'ocean marine life underwater' },
+  { label: 'Historical monuments', query: 'historical monuments heritage sites' },
 ];
 
 /** Generate smart fallback suggestions from a query */
@@ -198,7 +198,7 @@ export default function HomePage() {
             {suggestions.categories.length > 0 && <div className="ac-section"><div className="ac-section-title"><CatIcon /> Categories</div>{suggestions.categories.map((c,i) => <button key={i} className="ac-item ac-item-cat" onClick={() => {setCustomCategory(c.title);setShowSugg(false);doSearch(query,c.title);}}>{c.label}</button>)}</div>}
           </div>
         )}
-        <div className="chips">{EXAMPLES.map(ex => <button key={ex.label} className="chip" onClick={() => {setQuery(ex.query);doSearch(ex.query);}}>{ex.label}</button>)}</div>
+        <div className="chips">{EXAMPLES.map(ex => <button key={ex.label} className="chip" onClick={() => setQuery(ex.query)}>{ex.label}</button>)}</div>
       </div>
     </section>
 
