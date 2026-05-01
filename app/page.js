@@ -139,7 +139,7 @@ export default function HomePage() {
       <header className="header">
         <div className="header-inner">
           <a href="/" className="header-logo">
-            <SearchIcon />
+            <img src="/commons-logo.svg" alt="Wikimedia Commons" width="24" height="24" />
             <span>WikiSemanticImgSearch</span>
           </a>
           <nav className="header-nav">
