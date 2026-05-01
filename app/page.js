@@ -380,6 +380,9 @@ export default function HomePage() {
         <p className="sub">
           Powered by <a href="https://wd-vectordb.wmcloud.org/docs" target="_blank" rel="noopener noreferrer">Wikidata Vector DB</a> · <a href="https://www.mediawiki.org/wiki/API:Main_page" target="_blank" rel="noopener noreferrer">MediaWiki API</a> · All images under free licenses
         </p>
+        <p className="sub" style={{ marginTop: 8 }}>
+          Made with ❤️ by <a href="https://meta.wikimedia.org/wiki/User:Sanskardubeydev" target="_blank" rel="noopener noreferrer">Sanskardubeydev</a> in collaboration with <a href="https://meta.wikimedia.org/wiki/User:Shadabgdg" target="_blank" rel="noopener noreferrer">Shadabgdg</a>
+        </p>
       </footer>
     </>
   );
