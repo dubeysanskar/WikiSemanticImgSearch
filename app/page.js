@@ -25,7 +25,7 @@ const EXAMPLE_QUERIES = [
 
 /** Export selected images to Excel (matches harvester xlsx format) */
 async function exportToExcel(items) {
-  const XLSX = (await import('xlsx')).default;
+  const XLSX = await import('xlsx');
   const rows = items.map((it) => ({
     image_page_url: it.pageUrl || '',
     file_url: it.fullUrl || '',
@@ -42,7 +42,7 @@ async function exportToExcel(items) {
   const ws = XLSX.utils.json_to_sheet(rows);
   // Auto-width columns
   const colWidths = Object.keys(rows[0] || {}).map((key) => ({
-    wch: Math.max(key.length, ...rows.map((r) => String(r[key] || '').length)).toString().length + 4,
+    wch: Math.max(key.length + 2, ...rows.map((r) => String(r[key] || '').slice(0, 60).length + 2)),
   }));
   ws['!cols'] = colWidths;
 
