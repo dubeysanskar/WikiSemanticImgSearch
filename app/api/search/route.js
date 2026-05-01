@@ -2,13 +2,12 @@
  * POST /api/search
  * Unified search endpoint — combines keyword, semantic (Vector DB + SDC), and category search
  *
- * OPTIMIZATIONS v2:
- * - All search paths fire in parallel (Promise.allSettled)
- * - searchByDepicts is now parallel (was sequential loop — 10x faster)
- * - Max 3 sub-queries for complex prompts (was 5)
- * - Lower similarity thresholds for better recall
- * - 15s global timeout on semantic path
- * - Keyword search always runs with original + cleaned + decomposed terms
+ * OPTIMIZATIONS v3:
+ * - Fast initial response: keyword + semantic fire in parallel
+ * - searchViaCategories now fully parallel (was sequential)
+ * - Tighter timeouts: 8s semantic, 6s category fallback
+ * - Keyword capped at 80 (API sweet spot), more via Load More
+ * - Decomposed sub-queries capped at 2 for speed
  */
 
 import { NextResponse } from 'next/server';
@@ -28,9 +27,9 @@ function deduplicate(results) {
   });
 }
 
-/** Semantic search for one sub-query — with internal timeout */
-async function semanticSearchForQuery(subQuery, simThreshold = 0.10, maxQids = 6) {
-  const vectorItems = await queryVectorDB(subQuery, { k: 20 });
+/** Semantic search for one sub-query */
+async function semanticSearchForQuery(subQuery, simThreshold = 0.10, maxQids = 5) {
+  const vectorItems = await queryVectorDB(subQuery, { k: 15 });
   if (!vectorItems.length) return { results: [], labels: {} };
 
   const qids = vectorItems
@@ -74,7 +73,7 @@ export async function POST(request) {
       minWidth = null,
       minHeight = null,
       pixelTolerance = 20,
-      maxResults = 40,
+      maxResults = 80,
     } = body;
 
     if (!query && !category) {
@@ -98,7 +97,7 @@ export async function POST(request) {
     if (category) {
       promises.push(
         searchByCategory(category, {
-          limit: maxResults,
+          limit: Math.min(maxResults, 80),
           minWidth: minWidth || undefined,
           minHeight: minHeight || undefined,
           pixelTolerance,
@@ -108,11 +107,10 @@ export async function POST(request) {
     }
 
     if (query) {
-      // 2. Keyword search — ALWAYS run with multiple query forms for best coverage
+      // 2. Keyword search — cap at 80 for speed
       if (mode === 'keyword' || mode === 'combined') {
-        // Original query (users exact words)
         promises.push(
-          searchKeyword(query, { limit: maxResults })
+          searchKeyword(query, { limit: Math.min(maxResults, 80) })
             .then((data) => ({ type: 'keyword', data }))
             .catch(() => ({ type: 'keyword', data: [] }))
         );
@@ -127,17 +125,16 @@ export async function POST(request) {
         }
       }
 
-      // 3. Semantic search — capped at 3 sub-queries, 15s total timeout
+      // 3. Semantic search — max 2 sub-queries, 8s timeout
       if (mode === 'semantic' || mode === 'combined') {
         const simThreshold = decomposed?.isComplex ? 0.08 : 0.15;
         const subQueries = decomposed?.isComplex
-          ? decomposed.subQueries.slice(0, 3)
+          ? decomposed.subQueries.slice(0, 2)
           : [query];
 
-        // All semantic sub-queries in parallel, with 15s timeout
         const semanticPromise = Promise.allSettled(
           subQueries.map((sq) =>
-            semanticSearchForQuery(sq, simThreshold, 6)
+            semanticSearchForQuery(sq, simThreshold, 5)
               .catch(() => ({ results: [], labels: {} }))
           )
         ).then((settled) => {
@@ -153,16 +150,16 @@ export async function POST(request) {
         });
 
         promises.push(
-          withTimeout(semanticPromise, 15000, { type: 'semantic', data: [], labels: {} })
+          withTimeout(semanticPromise, 8000, { type: 'semantic', data: [], labels: {} })
         );
 
-        // Category-based semantic fallback
+        // Category-based semantic fallback — 6s timeout
         promises.push(
           withTimeout(
-            searchViaCategories(cleanedTerms || query, { limit: 12 })
+            searchViaCategories(cleanedTerms || query, { limit: 8 })
               .then((data) => ({ type: 'semantic-cat', data }))
               .catch(() => ({ type: 'semantic-cat', data: [] })),
-            10000,
+            6000,
             { type: 'semantic-cat', data: [] }
           )
         );

@@ -150,7 +150,7 @@ export default function HomePage() {
     if (!sq.trim() && !sc) return;
     setLoading(true); setResults(null); setSelected(new Set()); setShowSugg(false); setVisibleCount(40);
     const preset = RESOLUTION_PRESETS[resPreset];
-    const body = { query: sq.trim(), mode: 'combined', category: sc || '', minWidth: preset?.width||(customWidth?Number(customWidth):null), minHeight: preset?.height||(customHeight?Number(customHeight):null), maxResults: 200 };
+    const body = { query: sq.trim(), mode: 'combined', category: sc || '', minWidth: preset?.width||(customWidth?Number(customWidth):null), minHeight: preset?.height||(customHeight?Number(customHeight):null), maxResults: 80 };
     const headers = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
     try { const r = await fetch('/api/search', { method:'POST', headers, body: JSON.stringify(body) }); const d = await r.json(); setResults(d); setActiveTab('combined'); } catch(e) { console.error(e); }
